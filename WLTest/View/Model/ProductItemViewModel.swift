@@ -84,9 +84,9 @@ class ProductItemViewModel: ViewModel {
             
             Networking.shared.loadData(with: imageURL) { (data, response, error) in
                 var existingRequests: [imageCompletion] = []
-                if var currentRequests = ProductItemViewModel.currentRequests[imageURL] {
+                if let currentRequests = ProductItemViewModel.currentRequests[imageURL] {
                     existingRequests.append(contentsOf: currentRequests)
-                    currentRequests.removeAll()
+                    ProductItemViewModel.currentRequests.removeValue(forKey: imageURL)
                 }
                 
                 if let data = data {
