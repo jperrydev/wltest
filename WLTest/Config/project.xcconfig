@@ -1,0 +1,12 @@
+//
+//  project.xcconfig
+//  WLTest
+//
+//  Created by Jordan Perry on 8/18/17.
+//  Copyright © 2017 Jordan Perry. All rights reserved.
+//
+
+HOST = "walmartlabs-test.appspot.com/_ah/api/walmart/v1"
+API_KEY = "ba8c4ec4-b5b9-4ece-8db2-9695361737b9"
+GCC_PREPROCESSOR_DEFINITIONS = HOST='@$(HOST)' API_KEY='@$(API_KEY)' $(inherited)
+
