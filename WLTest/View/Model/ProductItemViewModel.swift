@@ -16,7 +16,7 @@ class ProductItemViewModel: ViewModel {
     typealias imageCompletion = (UIImage?, Error?) -> Swift.Void
     
     /// keep track of current requests to avoid ignoring cache
-    static var currentRequests: [URL : [imageCompletion]] = [:]
+    static var currentOperations: [URL: NSHashTable<AsyncBlockOperation>] = [:]
     
     /// cache of images, based on url
     static var cache: NSCache<NSURL, UIImage> = NSCache<NSURL, UIImage>()
@@ -29,6 +29,9 @@ class ProductItemViewModel: ViewModel {
     
     /// Can be used by an image to cache whether or not the image has been loaded visually
     var hasLoadedImage: Bool = false
+    
+    /// Current operation for view model
+    var currentOperation: AsyncBlockOperation?
     
     /// how the product name should be displayed
     var displayProductName: String? {
@@ -68,56 +71,69 @@ class ProductItemViewModel: ViewModel {
             return
         }
         
-        if let image = ProductItemViewModel.cache.object(forKey: imageURL as NSURL) {
-            completion(image, nil)
+        let op = AsyncBlockOperation { (cancelled, finished) in
+            if let image = ProductItemViewModel.cache.object(forKey: imageURL as NSURL) {
+                guard !cancelled() else {
+                    return
+                }
+                
+                completion(image, nil)
+                finished()
+            } else {
+                Networking.shared.loadData(with: imageURL) { (data, response, error) in
+                    if let data = data {
+                        DispatchQueue.global().async {
+                            if let image = UIImage(data: data) {
+                                ProductItemViewModel.cache.setObject(image, forKey: imageURL as NSURL)
+                                // even if cancelled, let's save to cache :)
+                                guard !cancelled() else {
+                                    return
+                                }
+                                
+                                completion(image, nil)
+                            } else {
+                                guard !cancelled() else {
+                                    return
+                                }
+                                
+                                completion(nil, nil)
+                            }
+                        }
+                    } else {
+                        guard !cancelled() else {
+                            return
+                        }
+                        
+                        completion(nil, error)
+                    }
+                    
+                    finished()
+                }
+            }
+        }
+        
+        if let hash = ProductItemViewModel.currentOperations[imageURL] {
+            if let lastOp = hash.allObjects.last {
+                op.addDependency(lastOp)
+            }
+            
+            hash.add(op)
+        } else {
+            let hash = NSHashTable<AsyncBlockOperation>.weakObjects()
+            hash.add(op)
+            
+            ProductItemViewModel.currentOperations[imageURL] = hash
+        }
+        
+        OperationQueue.main.addOperation(op)
+    }
+    
+    func cancelImageDownload() {
+        guard let currentOperation = currentOperation else {
             return
         }
         
-        if var currentRequests = ProductItemViewModel.currentRequests[imageURL], currentRequests.count > 0 {
-            currentRequests.append(completion)
-        } else {
-            if var currentRequests = ProductItemViewModel.currentRequests[imageURL] {
-                currentRequests.append(completion)
-            } else {
-                ProductItemViewModel.currentRequests[imageURL] = [completion]
-            }
-            
-            Networking.shared.loadData(with: imageURL) { (data, response, error) in
-                var existingRequests: [imageCompletion] = []
-                if let currentRequests = ProductItemViewModel.currentRequests[imageURL] {
-                    existingRequests.append(contentsOf: currentRequests)
-                    ProductItemViewModel.currentRequests.removeValue(forKey: imageURL)
-                }
-                
-                if let data = data {
-                    DispatchQueue.global().async {
-                        if let image = UIImage(data: data) {
-                            ProductItemViewModel.cache.setObject(image, forKey: imageURL as NSURL)
-                            DispatchQueue.main.async {
-                                self.fireAllHandlers(imageURL, image, nil, existingRequests)
-                            }
-                        } else {
-                            self.fireAllHandlers(imageURL, nil, nil, existingRequests)
-                        }
-                    }
-                } else {
-                    self.fireAllHandlers(imageURL, nil, error, existingRequests)
-                }
-            }
-        }
-    }
-    
-    /// Helper for firing all handlers that are currently cached for a url
-    ///
-    /// - Parameters:
-    ///   - imageURL: The imageURL used for fetching the image
-    ///   - image: The image
-    ///   - error: Any error for the request
-    ///   - existingRequests: The existing request handlers
-    func fireAllHandlers(_ imageURL: URL, _ image: UIImage?, _ error: Error?, _ existingRequests: [imageCompletion]) {
-        for handler in existingRequests {
-            handler(image, error)
-        }
+        currentOperation.cancel()
     }
     
     /// initialize with model

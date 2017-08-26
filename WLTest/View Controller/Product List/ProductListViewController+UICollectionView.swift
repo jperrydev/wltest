@@ -73,6 +73,15 @@ extension ProductListViewController: UICollectionViewDataSource, UICollectionVie
             
             loadingDisplaying = false
         }
+        
+        if indexPath.section == 0 {
+            let model = products[indexPath.item]
+            guard let viewModel = model.productItemViewModel else {
+                return
+            }
+            
+            viewModel.cancelImageDownload()
+        }
     }
     
     // MARK: UICollectionViewDataSourcePrefetching
